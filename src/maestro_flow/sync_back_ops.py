@@ -135,33 +135,82 @@ def apply_sync_decisions(
             target.relative_to(repo_root_resolved)
             source.relative_to(workspace_root_resolved)
         except ValueError:
-            failed.append({"path": rel_path, "action": action, "decision": decision, "message": "路径越界，拒绝执行。"})
+            failed.append(
+                {
+                    "path": rel_path,
+                    "action": action,
+                    "decision": decision,
+                    "message": "路径越界，拒绝执行。",
+                }
+            )
             continue
 
         if decision != "apply":
-            skipped.append({"path": rel_path, "action": action, "decision": decision, "message": "按决策保留主工作区版本。"})
+            skipped.append(
+                {
+                    "path": rel_path,
+                    "action": action,
+                    "decision": decision,
+                    "message": "按决策保留主工作区版本。",
+                }
+            )
             continue
 
         if action == "delete":
             if not target.exists():
-                skipped.append({"path": rel_path, "action": action, "decision": decision, "message": "目标文件不存在，跳过删除。"})
+                skipped.append(
+                    {
+                        "path": rel_path,
+                        "action": action,
+                        "decision": decision,
+                        "message": "目标文件不存在，跳过删除。",
+                    }
+                )
                 continue
             if not target.is_file():
-                failed.append({"path": rel_path, "action": action, "decision": decision, "message": "目标路径不是文件，删除失败。"})
+                failed.append(
+                    {
+                        "path": rel_path,
+                        "action": action,
+                        "decision": decision,
+                        "message": "目标路径不是文件，删除失败。",
+                    }
+                )
                 continue
             if not dry_run:
                 target.unlink()
-            applied.append({"path": rel_path, "action": action, "decision": decision, "message": "已删除主工作区文件。"})
+            applied.append(
+                {
+                    "path": rel_path,
+                    "action": action,
+                    "decision": decision,
+                    "message": "已删除主工作区文件。",
+                }
+            )
             continue
 
         if not source.exists() or not source.is_file():
-            failed.append({"path": rel_path, "action": action, "decision": decision, "message": "隔离执行目录缺少源文件。"})
+            failed.append(
+                {
+                    "path": rel_path,
+                    "action": action,
+                    "decision": decision,
+                    "message": "隔离执行目录缺少源文件。",
+                }
+            )
             continue
 
         if not dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-        applied.append({"path": rel_path, "action": action, "decision": decision, "message": "已按决策回写主工作区。"})
+        applied.append(
+            {
+                "path": rel_path,
+                "action": action,
+                "decision": decision,
+                "message": "已按决策回写主工作区。",
+            }
+        )
 
     status = "failed" if failed else "succeeded"
     return {

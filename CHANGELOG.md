@@ -6,6 +6,14 @@ This project loosely follows Keep a Changelog and uses semantic versioning as a 
 
 ## [Unreleased]
 
+### Added
+
+- Added opt-in `--json` output mode for key CLI commands, including `run`, `spec run`, `install`, `ci evaluate`, and `sync-back` operations
+
+### Changed
+
+- Fixed sync-back user-facing messages to use readable UTF-8 Chinese text
+
 ## [0.1.0] - 2026-04-29
 
 ### Added
@@ -30,4 +38,3 @@ This project loosely follows Keep a Changelog and uses semantic versioning as a 
 - README restructured for open-source first-run experience
 - Runtime dependencies simplified to use `pyproject.toml` as the primary source of truth
 - Codex integration wording normalized around skills instead of separate VSCode Codex handling
-

@@ -21,7 +21,7 @@ from maestro_flow.ci_ops import (
 from maestro_flow.config import load_config
 from maestro_flow.git_ops import create_pr, finalize_commit, write_pr_body
 from maestro_flow.integrations import INTEGRATION_TARGETS, init_spec_file, install_integration
-from maestro_flow.orchestrator import DevFlowOrchestrator
+from maestro_flow.orchestrator import DevFlowOrchestrator, RunResult
 from maestro_flow.providers import supported_providers
 from maestro_flow.sync_back_ops import (
     apply_sync_decisions,
@@ -47,6 +47,63 @@ def _repo_root() -> Path:
     return root
 
 
+def _path_text(path: Path) -> str:
+    return path.resolve(strict=False).as_posix()
+
+
+def _emit_json(payload: dict) -> None:
+    typer.echo(json.dumps(payload, ensure_ascii=False))
+
+
+def _emit_json_error(
+    *,
+    command: str,
+    message: str,
+    error_type: str = "runtime_error",
+    exit_code: int = 1,
+) -> None:
+    _emit_json(
+        {
+            "ok": False,
+            "command": command,
+            "error": {
+                "type": error_type,
+                "message": message,
+            },
+        }
+    )
+    raise typer.Exit(code=exit_code)
+
+
+def _print_run_result(*, run_id: str, run_dir: Path, verdict: str, summary_file: Path) -> None:
+    console.print(f"run_id: [bold]{run_id}[/bold]")
+    console.print(f"run_dir: {run_dir}")
+    console.print(f"verdict: {verdict}")
+    console.print(f"summary: {summary_file}")
+
+
+def _build_run_payload(
+    *,
+    command: str,
+    run_id: str,
+    run_dir: Path,
+    verdict: str,
+    summary_file: Path,
+    extra: dict | None = None,
+) -> dict:
+    payload = {
+        "ok": True,
+        "command": command,
+        "run_id": run_id,
+        "run_dir": _path_text(run_dir),
+        "verdict": verdict,
+        "summary_file": _path_text(summary_file),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 def _run_with_requirement(
     *,
     requirement: str,
@@ -58,7 +115,7 @@ def _run_with_requirement(
     execution_loop: bool,
     execution_isolated: bool,
     execution_sync_back: bool,
-) -> None:
+) -> RunResult:
     repo_root = _repo_root()
     cfg = load_config(repo_root / config_path)
     if execution_loop:
@@ -84,11 +141,7 @@ def _run_with_requirement(
         execute_quality_gates=not skip_gates,
         execute_rollback=not skip_rollback,
     )
-
-    console.print(f"run_id: [bold]{result.run_id}[/bold]")
-    console.print(f"run_dir: {result.run_dir}")
-    console.print(f"verdict: {result.verdict}")
-    console.print(f"summary: {result.summary_file}")
+    return result
 
 
 def _resolve_output_path(repo_root: Path, raw: str) -> Path:
@@ -126,17 +179,44 @@ def run(
     execution_loop: bool = typer.Option(False, "--execution-loop", help="Enable P6 execution loop for this run"),
     execution_isolated: bool = typer.Option(False, "--execution-isolated", help="Run execution loop in isolated copy workspace"),
     execution_sync_back: bool = typer.Option(False, "--execution-sync-back", help="Sync isolated execution changes back to repo on success"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output"),
 ):
-    _run_with_requirement(
-        requirement=requirement,
-        config_path=config,
-        model=model,
-        mock=mock,
-        skip_gates=skip_gates,
-        skip_rollback=skip_rollback,
-        execution_loop=execution_loop,
-        execution_isolated=execution_isolated,
-        execution_sync_back=execution_sync_back,
+    try:
+        result = _run_with_requirement(
+            requirement=requirement,
+            config_path=config,
+            model=model,
+            mock=mock,
+            skip_gates=skip_gates,
+            skip_rollback=skip_rollback,
+            execution_loop=execution_loop,
+            execution_isolated=execution_isolated,
+            execution_sync_back=execution_sync_back,
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            _emit_json_error(command="run", message=str(exc), error_type=exc.__class__.__name__)
+        raise
+
+    if json_output:
+        _emit_json(
+            _build_run_payload(
+                command="run",
+                run_id=result.run_id,
+                run_dir=result.run_dir,
+                verdict=result.verdict,
+                summary_file=result.summary_file,
+            )
+        )
+        return
+
+    _print_run_result(
+        run_id=result.run_id,
+        run_dir=result.run_dir,
+        verdict=result.verdict,
+        summary_file=result.summary_file,
     )
 
 
@@ -214,16 +294,40 @@ def install_cmd(
     scope: str = typer.Option("project", help="Install scope: project or user"),
     dest: str = typer.Option("", help="Optional custom destination path"),
     dry_run: bool = typer.Option(False, help="Only print install plan"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output"),
 ):
     repo_root = _repo_root()
-    dst, files = install_integration(
-        repo_root=repo_root,
-        target=target.strip().lower(),
-        scope=scope.strip().lower(),
-        destination_override=dest.strip() or None,
-        dry_run=dry_run,
-    )
+    try:
+        dst, files = install_integration(
+            repo_root=repo_root,
+            target=target.strip().lower(),
+            scope=scope.strip().lower(),
+            destination_override=dest.strip() or None,
+            dry_run=dry_run,
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            _emit_json_error(command="install", message=str(exc), error_type=exc.__class__.__name__)
+        raise
     action = "plan" if dry_run else "installed"
+
+    if json_output:
+        _emit_json(
+            {
+                "ok": True,
+                "command": "install",
+                "target": target.strip().lower(),
+                "scope": scope.strip().lower(),
+                "destination": _path_text(dst),
+                "dry_run": dry_run,
+                "action": action,
+                "files": [_path_text(f) for f in files],
+            }
+        )
+        return
+
     console.print(f"{action} target: {target} ({scope})")
     console.print(f"destination: {dst}")
     for f in files:
@@ -234,18 +338,43 @@ def install_cmd(
 def ci_evaluate(
     run_id: str = typer.Option("", help="Run id. If empty, use latest run."),
     fail_on_conditions: bool = typer.Option(False, help="Fail gate when merge conditions exist."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output"),
 ):
-    repo_root = _repo_root()
-    run_dir = resolve_run_dir(repo_root=repo_root, run_id=run_id)
-    state = load_run_state(run_dir)
-    reviewer = load_reviewer_output(run_dir)
-    policy_results = load_policy_report(run_dir)
-    evaluation = evaluate_run(
-        state=state,
-        reviewer=reviewer,
-        policy_results=policy_results,
-        fail_on_conditions=fail_on_conditions,
-    )
+    try:
+        repo_root = _repo_root()
+        run_dir = resolve_run_dir(repo_root=repo_root, run_id=run_id)
+        state = load_run_state(run_dir)
+        reviewer = load_reviewer_output(run_dir)
+        policy_results = load_policy_report(run_dir)
+        evaluation = evaluate_run(
+            state=state,
+            reviewer=reviewer,
+            policy_results=policy_results,
+            fail_on_conditions=fail_on_conditions,
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            _emit_json_error(command="ci.evaluate", message=str(exc), error_type=exc.__class__.__name__)
+        raise
+
+    payload = {
+        "ok": evaluation.passed,
+        "command": "ci.evaluate",
+        "run_dir": _path_text(run_dir),
+        "run_status": evaluation.run_status,
+        "reviewer_verdict": evaluation.reviewer_verdict,
+        "passed": evaluation.passed,
+        "reasons": evaluation.reasons,
+        "reason_codes": evaluation.reason_codes,
+    }
+
+    if json_output:
+        _emit_json(payload)
+        if not evaluation.passed:
+            raise typer.Exit(code=1)
+        return
 
     console.print(f"run_dir: {run_dir}")
     console.print(f"run_status: {evaluation.run_status}")
@@ -321,11 +450,19 @@ def spec_run(
     execution_loop: bool = typer.Option(False, "--execution-loop", help="Enable P6 execution loop for this run"),
     execution_isolated: bool = typer.Option(False, "--execution-isolated", help="Run execution loop in isolated copy workspace"),
     execution_sync_back: bool = typer.Option(False, "--execution-sync-back", help="Sync isolated execution changes back to repo on success"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output"),
 ):
     spec_path = Path(file)
     if not spec_path.is_absolute():
         spec_path = _repo_root() / spec_path
     if not spec_path.exists():
+        if json_output:
+            _emit_json_error(
+                command="spec.run",
+                message=f"Spec file not found: {spec_path}",
+                error_type="bad_parameter",
+                exit_code=2,
+            )
         raise typer.BadParameter(f"Spec file not found: {spec_path}")
 
     content = spec_path.read_text(encoding="utf-8").strip()
@@ -335,16 +472,43 @@ def spec_run(
         f"{content}"
     )
 
-    _run_with_requirement(
-        requirement=requirement,
-        config_path=config,
-        model=model,
-        mock=mock,
-        skip_gates=skip_gates,
-        skip_rollback=skip_rollback,
-        execution_loop=execution_loop,
-        execution_isolated=execution_isolated,
-        execution_sync_back=execution_sync_back,
+    try:
+        result = _run_with_requirement(
+            requirement=requirement,
+            config_path=config,
+            model=model,
+            mock=mock,
+            skip_gates=skip_gates,
+            skip_rollback=skip_rollback,
+            execution_loop=execution_loop,
+            execution_isolated=execution_isolated,
+            execution_sync_back=execution_sync_back,
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            _emit_json_error(command="spec.run", message=str(exc), error_type=exc.__class__.__name__)
+        raise
+
+    if json_output:
+        _emit_json(
+            _build_run_payload(
+                command="spec.run",
+                run_id=result.run_id,
+                run_dir=result.run_dir,
+                verdict=result.verdict,
+                summary_file=result.summary_file,
+                extra={"spec_file": _path_text(spec_path)},
+            )
+        )
+        return
+
+    _print_run_result(
+        run_id=result.run_id,
+        run_dir=result.run_dir,
+        verdict=result.verdict,
+        summary_file=result.summary_file,
     )
 
 
@@ -353,17 +517,47 @@ def sync_back_plan(
     run_id: str = typer.Option("", help="Run id. If empty, use latest run."),
     output_file: str = typer.Option("", help="Decision file path, default is run_dir/sync_back_decisions.json"),
     force: bool = typer.Option(False, "--force", help="Overwrite existing decision file"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output"),
 ):
-    repo_root = _repo_root()
-    run_dir = resolve_run_dir(repo_root=repo_root, run_id=run_id)
-    payload = build_sync_decision_template(repo_root=repo_root, run_dir=run_dir)
-    decision_file = _resolve_output_path(repo_root, output_file) if output_file else run_dir / "sync_back_decisions.json"
+    try:
+        repo_root = _repo_root()
+        run_dir = resolve_run_dir(repo_root=repo_root, run_id=run_id)
+        payload = build_sync_decision_template(repo_root=repo_root, run_dir=run_dir)
+        decision_file = _resolve_output_path(repo_root, output_file) if output_file else run_dir / "sync_back_decisions.json"
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            _emit_json_error(command="sync-back.plan", message=str(exc), error_type=exc.__class__.__name__)
+        raise
     if decision_file.exists() and not force:
+        if json_output:
+            _emit_json_error(
+                command="sync-back.plan",
+                message=f"决策文件已存在: {decision_file}，如需覆盖请加 --force",
+                error_type="bad_parameter",
+                exit_code=2,
+            )
         raise typer.BadParameter(f"决策文件已存在: {decision_file}，如需覆盖请加 --force")
     save_sync_decisions(output_file=decision_file, payload=payload)
 
     items = payload.get("items", [])
     conflict_count = sum(1 for item in items if bool(item.get("conflict", False)))
+
+    if json_output:
+        _emit_json(
+            {
+                "ok": True,
+                "command": "sync-back.plan",
+                "run_id": run_dir.name,
+                "run_dir": _path_text(run_dir),
+                "decision_file": _path_text(decision_file),
+                "items": len(items),
+                "conflicts": conflict_count,
+            }
+        )
+        return
+
     console.print(f"run_dir: {run_dir}")
     console.print(f"decision_file: {decision_file}")
     console.print(f"items: {len(items)}")
@@ -375,21 +569,48 @@ def sync_back_apply(
     run_id: str = typer.Option("", help="Run id. If empty, use latest run."),
     decision_file: str = typer.Option("", help="Decision file path, default is run_dir/sync_back_decisions.json"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Only evaluate decisions without writing files"),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output"),
 ):
-    repo_root = _repo_root()
-    run_dir = resolve_run_dir(repo_root=repo_root, run_id=run_id)
-    resolved_decision_file = _resolve_output_path(repo_root, decision_file) if decision_file else run_dir / "sync_back_decisions.json"
-    payload = load_sync_decisions(resolved_decision_file)
-    report = apply_sync_decisions(
-        repo_root=repo_root,
-        run_dir=run_dir,
-        decision_payload=payload,
-        dry_run=dry_run,
-    )
+    try:
+        repo_root = _repo_root()
+        run_dir = resolve_run_dir(repo_root=repo_root, run_id=run_id)
+        resolved_decision_file = _resolve_output_path(repo_root, decision_file) if decision_file else run_dir / "sync_back_decisions.json"
+        payload = load_sync_decisions(resolved_decision_file)
+        report = apply_sync_decisions(
+            repo_root=repo_root,
+            run_dir=run_dir,
+            decision_payload=payload,
+            dry_run=dry_run,
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        if json_output:
+            _emit_json_error(command="sync-back.apply", message=str(exc), error_type=exc.__class__.__name__)
+        raise
 
     report_file = write_manual_sync_report(run_dir=run_dir, report=report)
     if not dry_run:
         _record_manual_sync_result(run_dir=run_dir, report=report)
+
+    payload = {
+        "ok": report.get("status") == "succeeded",
+        "command": "sync-back.apply",
+        "run_id": run_dir.name,
+        "run_dir": _path_text(run_dir),
+        "decision_file": _path_text(resolved_decision_file),
+        "report_file": _path_text(report_file),
+        "status": report.get("status"),
+        "applied": len(report.get("applied", [])),
+        "skipped": len(report.get("skipped", [])),
+        "failed": len(report.get("failed", [])),
+    }
+
+    if json_output:
+        _emit_json(payload)
+        if report.get("status") != "succeeded":
+            raise typer.Exit(code=1)
+        return
 
     console.print(f"run_dir: {run_dir}")
     console.print(f"decision_file: {resolved_decision_file}")
