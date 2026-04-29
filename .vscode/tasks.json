@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Maestro: Spec Init",
+      "type": "shell",
+      "command": "python -m maestro_flow.cli spec init --name \"${input:specName}\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "Maestro: Spec Run (需确认YES)",
+      "type": "shell",
+      "command": "powershell -NoProfile -Command \"$c='${input:confirmRun}'; if($c -ne 'YES'){ Write-Host '未确认，已取消执行'; exit 1 }; python -m maestro_flow.cli spec run --file '${input:specFile}'\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "Maestro: Spec Run (Mock, 需确认YES)",
+      "type": "shell",
+      "command": "powershell -NoProfile -Command \"$c='${input:confirmRun}'; if($c -ne 'YES'){ Write-Host '未确认，已取消执行'; exit 1 }; python -m maestro_flow.cli spec run --file '${input:specFile}' --mock --skip-gates\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "Maestro: Run Requirement (需确认YES)",
+      "type": "shell",
+      "command": "powershell -NoProfile -Command \"$c='${input:confirmRun}'; if($c -ne 'YES'){ Write-Host '未确认，已取消执行'; exit 1 }; python -m maestro_flow.cli run --requirement '${input:requirement}' --skip-gates\"",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "specName",
+      "type": "promptString",
+      "description": "Spec name"
+    },
+    {
+      "id": "specFile",
+      "type": "promptString",
+      "description": "Spec file path (for example .maestro/specs/20260324-1000-feature.md)"
+    },
+    {
+      "id": "requirement",
+      "type": "promptString",
+      "description": "Requirement text"
+    },
+    {
+      "id": "confirmRun",
+      "type": "promptString",
+      "description": "输入 YES 才会执行（其他内容将取消）",
+      "default": "NO"
+    }
+  ]
+}

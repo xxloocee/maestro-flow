@@ -1,0 +1,89 @@
+default_model: ${MAESTRO_MODEL:gpt-5.4-mini}
+agents:
+  pm:
+    name: PM Agent
+    prompt_file: agents/prompts/pm.md
+    temperature: 0.2
+  architect:
+    name: Architect Agent
+    prompt_file: agents/prompts/architect.md
+    temperature: 0.2
+  dev:
+    name: Dev Agent
+    prompt_file: agents/prompts/dev.md
+    temperature: 0.2
+  tester:
+    name: Test Agent
+    prompt_file: agents/prompts/tester.md
+    temperature: 0.2
+  debugger:
+    name: Debug Agent
+    prompt_file: agents/prompts/debugger.md
+    temperature: 0.1
+  reviewer:
+    name: Reviewer Agent
+    prompt_file: agents/prompts/reviewer.md
+    temperature: 0.1
+quality_gates:
+  - name: unit-test
+    command: python -m pytest -q
+    required: false
+workflow:
+  max_retries: 1
+  parallel_workers: 3
+  execution_enabled: false
+  max_fix_loops: 2
+  command_timeout_seconds: 180
+  execution_workspace_mode: inplace
+  cleanup_execution_workspace: false
+  sync_back_on_success: false
+  sync_back_only_if_policies_pass: true
+  sync_back_conflict_action: block
+  allowed_execution_commands:
+    - python -m pytest
+    - pytest
+    - python -m unittest
+    - npm test
+    - npm run test
+    - pnpm test
+    - pnpm run test
+    - yarn test
+    - yarn run test
+  command_policies: []
+  unmatched_command_action: block
+  blocked_command_fragments:
+    - rm -rf
+    - del /f /s /q
+    - "format "
+    - shutdown
+    - reboot
+    - git reset --hard
+    - git checkout --
+rollback:
+  enabled: true
+  mode: command
+  commands: []
+  stop_on_error: true
+knowledge:
+  enabled: true
+  include_patterns:
+    - README.md
+    - docs/**/*.md
+    - agents/prompts/*.md
+  max_files: 12
+  max_chars_per_file: 2500
+  max_total_chars: 12000
+policy:
+  enabled: true
+  require_tester_cases: true
+  require_dev_verification_commands: true
+  max_dev_file_changes: 120
+  block_on_critical_review: true
+  plugin_entrypoints:
+    - policies/no_todo.py:run
+  rules: {}
+  secret_patterns:
+    - AKIA[0-9A-Z]{16}
+    - "(?i)api[_-]?key\\s*[:=]\\s*['\\\"][^'\\\"]+['\\\"]"
+    - "(?i)password\\s*[:=]\\s*['\\\"][^'\\\"]+['\\\"]"
+
