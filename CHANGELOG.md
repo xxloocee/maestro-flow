@@ -6,23 +6,28 @@ This project loosely follows Keep a Changelog and uses semantic versioning as a 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-29
+
 ### Added
 
-- MVP definition and support boundary documentation
-- Codex integration roadmap documentation
-- Validated host/provider combinations documentation
-- Real-world regression samples documentation
-- Open-source release checklist documentation
-- Release regression checklist and smoke tests
+- Initial open-source release of Maestro Flow as a local multi-agent delivery CLI
+- Requirement-driven and spec-driven workflow entry points
+- Structured run artifacts under `.maestro/runs/<run_id>/`
+- Policy gate, CI evaluation, and PR comment support
+- Host integration templates for:
+  - `opencode`
+  - `claude`
+  - `cursor`
+  - `antigravity`
 - Codex default-path skills:
   - `maestro-spec`
   - `maestro-run`
-  - `maestro-report`
-  - `maestro-ci`
-- VSCode Codex task wording cleanup
+- MVP definition, support boundary, validated setup, regression sample, and release checklist documentation
+- Release smoke tests and CI package build verification
 
 ### Changed
 
 - README restructured for open-source first-run experience
-- Support matrix updated to reflect current Codex status
-- Codex and VSCode Codex integration wording normalized
+- Runtime dependencies simplified to use `pyproject.toml` as the primary source of truth
+- Codex integration wording normalized around skills instead of separate VSCode Codex handling
+
