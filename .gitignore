@@ -9,3 +9,10 @@ __pycache__/
 dist/
 build/
 
+# Project-scoped host installation outputs
+.agents/
+.antigravity/
+.claude/
+.cursor/
+.opencode/
+
